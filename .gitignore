@@ -1,0 +1,8 @@
+##FOLDERS
+GeoLite2-City-CSV
+GeoLite2-Country-CSV
+
+##FILES
+.DS_Store
+*.csv
+!source-sample.csv
