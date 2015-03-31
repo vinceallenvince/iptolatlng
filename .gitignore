@@ -1,6 +1,7 @@
 ##FOLDERS
 GeoLite2-City-CSV
 GeoLite2-Country-CSV
+output
 
 ##FILES
 .DS_Store

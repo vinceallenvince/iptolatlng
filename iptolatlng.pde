@@ -1,12 +1,19 @@
 import java.util.*;
 
-String networkGeoIDCountryPath = "GeoLite2-Country-CSV/GeoLite2-Country-Blocks-IPv4.csv";
+/**
+ * Need to convert geoip Block files via geoip2-csv-converter (https://github.com/maxmind/geoip2-csv-converter).
+ * You should include the integer range via -include-integer-range=true. A sample command looks like:
+ * ./geoip2-csv-converter -block-file=GeoLite2-Country-Blocks-IPv4.csv -include-integer-range=true -output-file=output.csv
+ * 
+ */
+
+String networkGeoIDCountryPath = "GeoLite2-Country-CSV/GeoLite2-Country-Blocks-IPv4-extended.csv";
 String networkGeoIDCountryCSV[];
 String networkGeoIDCountryData[][];
 int totalNetworkGeoIDCountries;
 HashMap<String, StringList> hm_networkGeoIDCountry = new HashMap<String, StringList>();
 
-String networkGeoIDCityPath = "GeoLite2-City-CSV/GeoLite2-City-Blocks-IPv4.csv";
+String networkGeoIDCityPath = "GeoLite2-City-CSV/GeoLite2-City-Blocks-IPv4-extended.csv";
 String networkGeoIDCityCSV[];
 String networkGeoIDCityData[][];
 int totalNetworkGeoIDCities;
@@ -32,15 +39,22 @@ StringDict sourceEndSongs = new StringDict();
 Date start;
 Date end;
 
+String outputSavePath = "output/output.csv";
+IntDict countryStreams = new IntDict();
+int counter = 0;
+
 void setup()
 {
   start = new Date();
-   println("Started loading data: " + start);
-   createNetworkGeoIDCountryHM();
-   /*createGeoIDDataCountryHM();
-   createNetworkGeoIDCityHM();
-   createGeoIDDataCityHM();*/
+  println("Started loading data: " + start);
   loadSourceEndSong();
+
+  createNetworkGeoIDCountryHM();
+  createGeoIDDataCountryHM();
+
+  //createNetworkGeoIDCityHM();
+  //createGeoIDDataCityHM();
+
   end = new Date();
   println("Ended loadng data: " + end);
 }
@@ -49,9 +63,46 @@ void draw()
 {
   noLoop();
   // iterate over sourceEndSongs
-  for (String s : sourceEndSongs.keys()) {
-    // lookup the ip in createNetworkGeoIDCountryHM
+  for (String ip : sourceEndSongs.keys ()) {
+
+    //if (counter > 200) break;
+
+    String octets[] = split(ip, ".");
+    int octet1 = int(octets[0]);
+    int octet2 = int(octets[1]);
+    int octet3 = int(octets[2]);
+    int octet4 = int(octets[3]);
+    int networkInteger = ipToInterger(octet1, octet2, octet3, octet4);
+
+    println("Source integer: " + networkInteger);
+
+    // lookup the ip in createNetworkGeoIDCountryHM 
+    for (Map.Entry row : hm_networkGeoIDCountry.entrySet ()) {
+      StringList net = (StringList)row.getValue();
+      int network_start = int(net.get(0));
+      int network_end = int(net.get(1));
+      String geoid = net.get(2);
+      if (networkInteger >= network_start && networkInteger <= network_end) {
+        println();
+        println(ip);
+        println("networkInteger: " + networkInteger + " Range: " + network_start + " -> " + network_end);
+        println("geoid: " + geoid);
+
+        StringList geoIDData = hm_geoIDDataCountry.get(geoid);  
+        println(geoIDData.get(4));      
+        
+        // 
+        int prevStreams = countryStreams.get(geoIDData.get(4)); // will return 0 if key does not exist
+        int combinedStreams = int(sourceEndSongs.get(ip)) + prevStreams;
+        
+        countryStreams.set(geoIDData.get(4), combinedStreams);
+        break;
+      }
+    }
+    counter++;
   }
+
+  saveOutput();
 }
 
 void loadSourceEndSong()
@@ -73,6 +124,25 @@ void loadSourceEndSong()
   sourceEndSongData = null;
   println("Total sourceEndSongRows processed: " + sourceEndSongs.size());
 }
+
+void saveOutput()
+{
+  PrintWriter output;
+  output = createWriter(outputSavePath);
+  for (String s : countryStreams.keys ()) {
+    output.println(s + "," + countryStreams.get(s));
+  }
+  // save the file
+  output.close();
+}
+
+// returns (first octet * 256³) + (second octet * 256²) + (third octet * 256) + (fourth octet)
+int ipToInterger(int octet1, int octet2, int octet3, int octet4)
+{
+  return (octet1 * 16777216) + (octet2 * 65536) + (octet3 * 256) + (octet4);
+}
+
+// !! should we use an Array here since we have to iterate thru it to find what we want
 void createNetworkGeoIDCountryHM()
 {
   networkGeoIDCountryCSV = loadStrings(networkGeoIDCountryPath);
@@ -84,25 +154,16 @@ void createNetworkGeoIDCountryHM()
   }
   println("Total networkGeoIDCountries sorted: " + networkGeoIDCountryData.length);
   for (int i = 0; i < networkGeoIDCountryData.length; i++) {
-    String network = networkGeoIDCountryData[i][0];
-    String geoname_id = networkGeoIDCountryData[i][1];
-
-    // create loop to create range of network keys
-    // find "/" and use digit before and after
-    // use split()
-    String[] listA = split(network, '/');
-    int high = int(listA[listA.length - 1]);
-    
-    String[] listB = split(listA[0], '.');
-    int low = int(listB[listB.length - 1]);
-    
-    println(low + ":" + high);
+    String network_start = networkGeoIDCountryData[i][0];
+    String network_end = networkGeoIDCountryData[i][1];
+    String geoname_id = networkGeoIDCountryData[i][2];
 
     StringList data = new StringList();
-    data.append(network);
+    data.append(network_start);
+    data.append(network_end);
     data.append(geoname_id);
 
-    hm_networkGeoIDCountry.put(network, data);
+    hm_networkGeoIDCountry.put(network_start + network_end, data);
   }
   networkGeoIDCountryCSV = null;
   networkGeoIDCountryData = null;
@@ -153,14 +214,16 @@ void createNetworkGeoIDCityHM()
   }
   println("Total networkGeoIDCities sorted: " + networkGeoIDCityData.length);
   for (int i = 0; i < networkGeoIDCityData.length; i++) {
-    String network = networkGeoIDCityData[i][0];
-    String geoname_id = networkGeoIDCityData[i][1];
+    String network_start = networkGeoIDCountryData[i][0];
+    String network_end = networkGeoIDCountryData[i][1];
+    String geoname_id = networkGeoIDCountryData[i][2];
 
     StringList data = new StringList();
-    data.append(network);
+    data.append(network_start);
+    data.append(network_end);
     data.append(geoname_id);
 
-    hm_networkGeoIDCity.put(network, data);
+    hm_networkGeoIDCity.put(network_start + network_end, data);
   }
   networkGeoIDCityCSV = null;
   networkGeoIDCityData = null;
